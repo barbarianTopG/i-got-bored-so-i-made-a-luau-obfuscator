@@ -1,13 +1,3 @@
--- tutorial: open roblox studio, even if ur doing PLAIN luau this is mandatory.
--- 1: download rbxstu at https://github.com/SecondNewtonLaw/RbxStu-Releases/releases/latest
--- 2: run rbxstu
--- 3: inject rbxstu into a running roblox studio process
--- 4: open whatever folder you put rbxstu in and create a CodeToObfuscate.txt file with the code you want to obfuscate
--- 5: run this
--- or use a roblox exploit executor (i do not and never will condone this)
--- credits to fiu & luau ception
--- itll write a `obfuscated{tick()}.lua` file which contains your obfuscated code
--- i recommend moving the obfuscated file and naming it so you know whats what. or store hashes
 local VMSource = [=[local type = type;
 local pcall = pcall;
 local error = error;
@@ -107827,6 +107817,6 @@ local function luau_resetflags()
     return
 end
 local function obfuscate(code)
-	return VMSource .. "\n" .. DecompresserSource .. "\n" .. "return luau_load(Decode(" .. "\"" .. luau_compile(code) .. "\"), (getfenv and getfenv() or _ENV))()"
+	return VMSource .. "\n" .. DecompresserSource .. "\n" .. "return luau_load(Decode(" .. "\"" .. lzwCompress(luau_compile(code)) .. "\"), (getfenv and getfenv() or _ENV))()"
 end
 (writefile or writefilecontents)("obfuscated" .. tostring(tick()) .. ".lua", obfuscate((readfile or read_file or getfile or get_file or getfilecontents or get_file_contents)("CodeToObfuscate.txt")))
