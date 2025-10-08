@@ -107817,6 +107817,6 @@ local function luau_resetflags()
     return
 end
 local function obfuscate(code)
-	return VMSource .. "\n" .. DecompresserSource .. "\n" .. "return luau_load(Decode(" .. "\"" .. lzwCompress(luau_compile(code)) .. "\"), (getfenv and getfenv() or _ENV))()"
+	return VMSource .. "\n" .. DecompresserSource .. "\n" .. "return luau_load(Decode(" .. "\"" .. LZW_Base64_Encode(luau_compile(code)) .. "\"), (getfenv and getfenv() or _ENV))()"
 end
 (writefile or writefilecontents)("obfuscated" .. tostring(tick()) .. ".lua", obfuscate((readfile or read_file or getfile or get_file or getfilecontents or get_file_contents)("CodeToObfuscate.txt")))
