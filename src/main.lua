@@ -1,1780 +1,294 @@
-local VMSource = [=[local type = type;
-local pcall = pcall;
-local error = error;
-local tonumber = tonumber;
-local assert = assert;
-local setmetatable = setmetatable;
-local string_format = string.format;
-local table_move = table.move;
-local table_pack = table.pack;
-local table_unpack = table.unpack;
-local table_create = table.create;
-local table_insert = table.insert;
-local table_remove = table.remove;
-local table_concat = table.concat;
-local coroutine_create = coroutine.create;
-local coroutine_yield = coroutine.yield;
-local coroutine_resume = coroutine.resume;
-local coroutine_close = coroutine.close;
-local buffer_fromstring = buffer.fromstring;
-local buffer_len = buffer.len;
-local buffer_readu8 = buffer.readu8;
-local buffer_readu32 = buffer.readu32;
-local buffer_readstring = buffer.readstring;
-local buffer_readf32 = buffer.readf32;
-local buffer_readf64 = buffer.readf64;
-local bit32_bor = bit32.bor;
-local bit32_band = bit32.band;
-local bit32_btest = bit32.btest;
-local bit32_rshift = bit32.rshift;
-local bit32_lshift = bit32.lshift;
-local bit32_extract = bit32.extract;
-local ttisnumber = function(v)
-    return type(v) == "number"
-end;
-local ttisstring = function(v)
-    return type(v) == "string"
-end;
-local ttisboolean = function(v)
-    return type(v) == "boolean"
-end;
-local ttisfunction = function(v)
-    return type(v) == "function"
-end;
-local opList = {
-    {
-        "NOP",
-        0,
-        0,
-        false
-    },
-    {
-        "BREAK",
-        0,
-        0,
-        false
-    },
-    {
-        "LOADNIL",
-        1,
-        0,
-        false
-    },
-    {
-        "LOADB",
-        3,
-        0,
-        false
-    },
-    {
-        "LOADN",
-        4,
-        0,
-        false
-    },
-    {
-        "LOADK",
-        4,
-        3,
-        false
-    },
-    {
-        "MOVE",
-        2,
-        0,
-        false
-    },
-    {
-        "GETGLOBAL",
-        1,
-        1,
-        true
-    },
-    {
-        "SETGLOBAL",
-        1,
-        1,
-        true
-    },
-    {
-        "GETUPVAL",
-        2,
-        0,
-        false
-    },
-    {
-        "SETUPVAL",
-        2,
-        0,
-        false
-    },
-    {
-        "CLOSEUPVALS",
-        1,
-        0,
-        false
-    },
-    {
-        "GETIMPORT",
-        4,
-        4,
-        true
-    },
-    {
-        "GETTABLE",
-        3,
-        0,
-        false
-    },
-    {
-        "SETTABLE",
-        3,
-        0,
-        false
-    },
-    {
-        "GETTABLEKS",
-        3,
-        1,
-        true
-    },
-    {
-        "SETTABLEKS",
-        3,
-        1,
-        true
-    },
-    {
-        "GETTABLEN",
-        3,
-        0,
-        false
-    },
-    {
-        "SETTABLEN",
-        3,
-        0,
-        false
-    },
-    {
-        "NEWCLOSURE",
-        4,
-        0,
-        false
-    },
-    {
-        "NAMECALL",
-        3,
-        1,
-        true
-    },
-    {
-        "CALL",
-        3,
-        0,
-        false
-    },
-    {
-        "RETURN",
-        2,
-        0,
-        false
-    },
-    {
-        "JUMP",
-        4,
-        0,
-        false
-    },
-    {
-        "JUMPBACK",
-        4,
-        0,
-        false
-    },
-    {
-        "JUMPIF",
-        4,
-        0,
-        false
-    },
-    {
-        "JUMPIFNOT",
-        4,
-        0,
-        false
-    },
-    {
-        "JUMPIFEQ",
-        4,
-        0,
-        true
-    },
-    {
-        "JUMPIFLE",
-        4,
-        0,
-        true
-    },
-    {
-        "JUMPIFLT",
-        4,
-        0,
-        true
-    },
-    {
-        "JUMPIFNOTEQ",
-        4,
-        0,
-        true
-    },
-    {
-        "JUMPIFNOTLE",
-        4,
-        0,
-        true
-    },
-    {
-        "JUMPIFNOTLT",
-        4,
-        0,
-        true
-    },
-    {
-        "ADD",
-        3,
-        0,
-        false
-    },
-    {
-        "SUB",
-        3,
-        0,
-        false
-    },
-    {
-        "MUL",
-        3,
-        0,
-        false
-    },
-    {
-        "DIV",
-        3,
-        0,
-        false
-    },
-    {
-        "MOD",
-        3,
-        0,
-        false
-    },
-    {
-        "POW",
-        3,
-        0,
-        false
-    },
-    {
-        "ADDK",
-        3,
-        2,
-        false
-    },
-    {
-        "SUBK",
-        3,
-        2,
-        false
-    },
-    {
-        "MULK",
-        3,
-        2,
-        false
-    },
-    {
-        "DIVK",
-        3,
-        2,
-        false
-    },
-    {
-        "MODK",
-        3,
-        2,
-        false
-    },
-    {
-        "POWK",
-        3,
-        2,
-        false
-    },
-    {
-        "AND",
-        3,
-        0,
-        false
-    },
-    {
-        "OR",
-        3,
-        0,
-        false
-    },
-    {
-        "ANDK",
-        3,
-        2,
-        false
-    },
-    {
-        "ORK",
-        3,
-        2,
-        false
-    },
-    {
-        "CONCAT",
-        3,
-        0,
-        false
-    },
-    {
-        "NOT",
-        2,
-        0,
-        false
-    },
-    {
-        "MINUS",
-        2,
-        0,
-        false
-    },
-    {
-        "LENGTH",
-        2,
-        0,
-        false
-    },
-    {
-        "NEWTABLE",
-        2,
-        0,
-        true
-    },
-    {
-        "DUPTABLE",
-        4,
-        3,
-        false
-    },
-    {
-        "SETLIST",
-        3,
-        0,
-        true
-    },
-    {
-        "FORNPREP",
-        4,
-        0,
-        false
-    },
-    {
-        "FORNLOOP",
-        4,
-        0,
-        false
-    },
-    {
-        "FORGLOOP",
-        4,
-        8,
-        true
-    },
-    {
-        "FORGPREP_INEXT",
-        4,
-        0,
-        false
-    },
-    {
-        "FASTCALL3",
-        3,
-        1,
-        true
-    },
-    {
-        "FORGPREP_NEXT",
-        4,
-        0,
-        false
-    },
-    {
-        "DEP_FORGLOOP_NEXT",
-        0,
-        0,
-        false
-    },
-    {
-        "GETVARARGS",
-        2,
-        0,
-        false
-    },
-    {
-        "DUPCLOSURE",
-        4,
-        3,
-        false
-    },
-    {
-        "PREPVARARGS",
-        1,
-        0,
-        false
-    },
-    {
-        "LOADKX",
-        1,
-        1,
-        true
-    },
-    {
-        "JUMPX",
-        5,
-        0,
-        false
-    },
-    {
-        "FASTCALL",
-        3,
-        0,
-        false
-    },
-    {
-        "COVERAGE",
-        5,
-        0,
-        false
-    },
-    {
-        "CAPTURE",
-        2,
-        0,
-        false
-    },
-    {
-        "SUBRK",
-        3,
-        7,
-        false
-    },
-    {
-        "DIVRK",
-        3,
-        7,
-        false
-    },
-    {
-        "FASTCALL1",
-        3,
-        0,
-        false
-    },
-    {
-        "FASTCALL2",
-        3,
-        0,
-        true
-    },
-    {
-        "FASTCALL2K",
-        3,
-        1,
-        true
-    },
-    {
-        "FORGPREP",
-        4,
-        0,
-        false
-    },
-    {
-        "JUMPXEQKNIL",
-        4,
-        5,
-        true
-    },
-    {
-        "JUMPXEQKB",
-        4,
-        5,
-        true
-    },
-    {
-        "JUMPXEQKN",
-        4,
-        6,
-        true
-    },
-    {
-        "JUMPXEQKS",
-        4,
-        6,
-        true
-    },
-    {
-        "IDIV",
-        3,
-        0,
-        false
-    },
-    {
-        "IDIVK",
-        3,
-        2,
-        false
-    }
-}
-local LUA_MULTRET = -1
-local LUA_GENERALIZED_TERMINATOR = -2
-local function luau_newsettings()
-    return {
-        vectorCtor = function()
-            error("vectorCtor was not provided")
-        end,
-        vectorSize = 4,
-        useNativeNamecall = false,
-        namecallHandler = function()
-            error("Native __namecall handler was not provided")
-        end,
-        extensions = {},
-        callHooks = {},
-        errorHandling = true,
-        generalizedIteration = true,
-        allowProxyErrors = false,
-        useImportConstants = false,
-        staticEnvironment = {},
-        decodeOp = function(op)
-            return op
-        end
-    }
-end;
-local function luau_validatesettings(luau_settings)
-    assert(type(luau_settings) == "table", "luau_settings should be a table")
-    assert(type(luau_settings.vectorCtor) == "function", "luau_settings.vectorCtor should be a function")
-    assert(type(luau_settings.vectorSize) == "number", "luau_settings.vectorSize should be a number")
-    assert(type(luau_settings.useNativeNamecall) == "boolean", "luau_settings.useNativeNamecall should be a boolean")
-    assert(type(luau_settings.namecallHandler) == "function", "luau_settings.namecallHandler should be a function")
-    assert(type(luau_settings.extensions) == "table", "luau_settings.extensions should be a table of functions")
-    assert(type(luau_settings.callHooks) == "table", "luau_settings.callHooks should be a table of functions")
-    assert(type(luau_settings.errorHandling) == "boolean", "luau_settings.errorHandling should be a boolean")
-    assert(type(luau_settings.generalizedIteration) == "boolean", "luau_settings.generalizedIteration should be a boolean")
-    assert(type(luau_settings.allowProxyErrors) == "boolean", "luau_settings.allowProxyErrors should be a boolean")
-    assert(type(luau_settings.staticEnvironment) == "table", "luau_settings.staticEnvironment should be a table")
-    assert(type(luau_settings.useImportConstants) == "boolean", "luau_settings.useImportConstants should be a boolean")
-    assert(type(luau_settings.decodeOp) == "function", "luau_settings.decodeOp should be a function")
-end;
-local function getmaxline(module, protoid)
-    local proto;
-    if protoid == nil then
-        proto = module.mainProto
-    else
-        proto = module.protoList[protoid]
-    end;
-    local size = -1
-    assert(proto.lineinfoenabled, "proto must have debug enabled")
-    for pc = 1, proto.sizecode do
-        local line = proto.instructionlineinfo[pc]
-        if line > size then
-            size = line
-        end
-    end;
-    for i, subid in proto.protos do
-        local maxline = getmaxline(module, subid)
-        if maxline > size then
-            size = maxline
-        end
-    end;
-    return size
-end;
-local function getcoverage(module, protoid, depth, callback, size)
-    local proto;
-    if protoid == nil then
-        proto = module.mainProto
-    else
-        proto = module.protoList[protoid]
-    end;
-    assert(proto.lineinfoenabled, "proto must have debug enabled")
-    local buffer = {}
-    for pc = 1, proto.sizecode do
-        local inst = proto.code[pc]
-        local line = proto.instructionlineinfo[pc]
-        if inst.opcode == 69 then
-            local hits = inst.E;
-            if (buffer[line] or 0) <= hits then
-                buffer[line] = hits
-            end
-        end
-    end;
-    callback(proto.debugname, proto.linedefined, depth, buffer, size)
-    for i, subid in proto.protos do
-        getcoverage(module, subid, depth + 1, callback, size)
-    end
-end;
-local function luau_getcoverage(module, protoid, callback)
-    assert(type(module) == "table", "module must be a table")
-    assert(type(protoid) == "number" or type(protoid) == "nil", "protoid must be a number or nil")
-    assert(type(callback) == "function", "callback must be a function")
-    getcoverage(module, protoid, 0, callback, getmaxline(module))
-end;
-local function resolveImportConstant(static, count, k0, k1, k2)
-    local res = static[k0]
-    if count < 2 or res == nil then
-        return res
-    end;
-    res = res[k1]
-    if count < 3 or res == nil then
-        return res
-    end;
-    res = res[k2]
-    return res
-end;
-local function luau_deserialize(bytecode, luau_settings)
-    if luau_settings == nil then
-        luau_settings = luau_newsettings()
-    else
-        luau_validatesettings(luau_settings)
-    end;
-    local stream;
-    if type(bytecode) == "string" then
-        stream = buffer_fromstring(bytecode)
-    else
-        stream = bytecode
-    end;
-    local cursor = 0;
-    local function readByte()
-        local byte = buffer_readu8(stream, cursor)
-        cursor = cursor + 1;
-        return byte
-    end;
-    local function readWord()
-        local word = buffer_readu32(stream, cursor)
-        cursor = cursor + 4;
-        return word
-    end;
-    local function readFloat()
-        local float = buffer_readf32(stream, cursor)
-        cursor = cursor + 4;
-        return float
-    end;
-    local function readDouble()
-        local double = buffer_readf64(stream, cursor)
-        cursor = cursor + 8;
-        return double
-    end;
-    local function readVarInt()
-        local result = 0;
-        for i = 0, 4 do
-            local value = readByte()
-            result = bit32_bor(result, bit32_lshift(bit32_band(value, 127), i * 7))
-            if not bit32_btest(value, 128) then
-                break
-            end
-        end;
-        return result
-    end;
-    local function readString()
-        local size = readVarInt()
-        if size == 0 then
-            return ""
-        else
-            local str = buffer_readstring(stream, cursor, size)
-            cursor = cursor + size;
-            return str
-        end
-    end;
-    local luauVersion = readByte()
-    local typesVersion = 0;
-    if luauVersion == 0 then
-        error("the provided bytecode is an error message", 0)
-    elseif luauVersion < 3 or luauVersion > 6 then
-        error("the version of the provided bytecode is unsupported", 0)
-    elseif luauVersion >= 4 then
-        typesVersion = readByte()
-    end;
-    local stringCount = readVarInt()
-    local stringList = table_create(stringCount)
-    for i = 1, stringCount do
-        stringList[i] = readString()
-    end;
-    local function readInstruction(codeList)
-        local value = luau_settings.decodeOp(readWord())
-        local opcode = bit32_band(value, 255)
-        local opinfo = opList[opcode + 1]
-        local opname = opinfo[1]
-        local opmode = opinfo[2]
-        local kmode = opinfo[3]
-        local usesAux = opinfo[4]
-        local inst = {
-            opcode = opcode;
-            opname = opname;
-            opmode = opmode;
-            kmode = kmode;
-            usesAux = usesAux
-        }
-        table_insert(codeList, inst)
-        if opmode == 1 then
-            inst.A = bit32_band(bit32_rshift(value, 8), 255)
-        elseif opmode == 2 then
-            inst.A = bit32_band(bit32_rshift(value, 8), 255)
-            inst.B = bit32_band(bit32_rshift(value, 16), 255)
-        elseif opmode == 3 then
-            inst.A = bit32_band(bit32_rshift(value, 8), 255)
-            inst.B = bit32_band(bit32_rshift(value, 16), 255)
-            inst.C = bit32_band(bit32_rshift(value, 24), 255)
-        elseif opmode == 4 then
-            inst.A = bit32_band(bit32_rshift(value, 8), 255)
-            local temp = bit32_band(bit32_rshift(value, 16), 65535)
-            if temp < 32768 then
-                inst.D = temp
-            else
-                inst.D = temp - 65536
-            end
-        elseif opmode == 5 then
-            local temp = bit32_band(bit32_rshift(value, 8), 16777215)
-            if temp < 8388608 then
-                inst.E = temp
-            else
-                inst.E = temp - 16777216
-            end
-        end;
-        if usesAux then
-            local aux = readWord()
-            inst.aux = aux;
-            table_insert(codeList, {
-                value = aux,
-                opname = "auxvalue"
-            })
-        end;
-        return usesAux
-    end;
-    local function checkkmode(inst, k)
-        local kmode = inst.kmode;
-        if kmode == 1 then
-            inst.K = k[inst.aux + 1]
-        elseif kmode == 2 then
-            inst.K = k[inst.C + 1]
-        elseif kmode == 3 then
-            inst.K = k[inst.D + 1]
-        elseif kmode == 4 then
-            local extend = inst.aux;
-            local count = bit32_rshift(extend, 30)
-            local id0 = bit32_band(bit32_rshift(extend, 20), 1023)
-            inst.K0 = k[id0 + 1]
-            inst.KC = count;
-            if count == 2 then
-                local id1 = bit32_band(bit32_rshift(extend, 10), 1023)
-                inst.K1 = k[id1 + 1]
-            elseif count == 3 then
-                local id1 = bit32_band(bit32_rshift(extend, 10), 1023)
-                local id2 = bit32_band(bit32_rshift(extend, 0), 1023)
-                inst.K1 = k[id1 + 1]
-                inst.K2 = k[id2 + 1]
-            end;
-            if luau_settings.useImportConstants then
-                inst.K = resolveImportConstant(luau_settings.staticEnvironment, count, inst.K0, inst.K1, inst.K2)
-            end
-        elseif kmode == 5 then
-            inst.K = bit32_extract(inst.aux, 0, 1) == 1;
-            inst.KN = bit32_extract(inst.aux, 31, 1) == 1
-        elseif kmode == 6 then
-            inst.K = k[bit32_extract(inst.aux, 0, 24) + 1]
-            inst.KN = bit32_extract(inst.aux, 31, 1) == 1
-        elseif kmode == 7 then
-            inst.K = k[inst.B + 1]
-        elseif kmode == 8 then
-            inst.K = bit32_band(inst.aux, 15)
-        end
-    end;
-    local function readProto(bytecodeid)
-        local maxstacksize = readByte()
-        local numparams = readByte()
-        local nups = readByte()
-        local isvararg = readByte() ~= 0;
-        if luauVersion >= 4 then
-            readByte()
-            local typesize = readVarInt()
-            cursor = cursor + typesize
-        end;
-        local sizecode = readVarInt()
-        local codelist = table_create(sizecode)
-        local skipnext = false;
-        for i = 1, sizecode do
-            if skipnext then
-                skipnext = false
-            else
-                skipnext = readInstruction(codelist)
-            end
-        end;
-        local debugcodelist = table_create(sizecode)
-        for i = 1, sizecode do
-            debugcodelist[i] = codelist[i].opcode
-        end;
-        local sizek = readVarInt()
-        local klist = table_create(sizek)
-        for i = 1, sizek do
-            local kt = readByte()
-            local k;
-            if kt == 0 then
-                k = nil
-            elseif kt == 1 then
-                k = readByte() ~= 0
-            elseif kt == 2 then
-                k = readDouble()
-            elseif kt == 3 then
-                k = stringList[readVarInt()]
-            elseif kt == 4 then
-                k = readWord()
-            elseif kt == 5 then
-                local dataLength = readVarInt()
-                k = table_create(dataLength)
-                for i = 1, dataLength do
-                    k[i] = readVarInt()
-                end
-            elseif kt == 6 then
-                k = readVarInt()
-            elseif kt == 7 then
-                local x, y, z, w = readFloat(), readFloat(), readFloat(), readFloat()
-                if luau_settings.vectorSize == 4 then
-                    k = luau_settings.vectorCtor(x, y, z, w)
-                else
-                    k = luau_settings.vectorCtor(x, y, z)
-                end
-            end;
-            klist[i] = k
-        end;
-        for i = 1, sizecode do
-            checkkmode(codelist[i], klist)
-        end;
-        local sizep = readVarInt()
-        local protolist = table_create(sizep)
-        for i = 1, sizep do
-            protolist[i] = readVarInt() + 1
-        end;
-        local linedefined = readVarInt()
-        local debugnameindex = readVarInt()
-        local debugname;
-        if debugnameindex ~= 0 then
-            debugname = stringList[debugnameindex]
-        else
-            debugname = "(??)"
-        end;
-        local lineinfoenabled = readByte() ~= 0;
-        local instructionlineinfo = nil;
-        if lineinfoenabled then
-            local linegaplog2 = readByte()
-            local intervals = bit32_rshift((sizecode - 1), linegaplog2) + 1;
-            local lineinfo = table_create(sizecode)
-            local abslineinfo = table_create(intervals)
-            local lastoffset = 0;
-            for j = 1, sizecode do
-                lastoffset = lastoffset + readByte()
-                lineinfo[j] = lastoffset
-            end;
-            local lastline = 0;
-            for j = 1, intervals do
-                lastline = lastline + readWord()
-                abslineinfo[j] = lastline % (2 ^ 32)
-            end;
-            instructionlineinfo = table_create(sizecode)
-            for i = 1, sizecode do
-                table_insert(instructionlineinfo, abslineinfo[bit32_rshift(i - 1, linegaplog2) + 1] + lineinfo[i])
-            end
-        end;
-        if readByte() ~= 0 then
-            local sizel = readVarInt()
-            for i = 1, sizel do
-                readVarInt()
-                readVarInt()
-                readVarInt()
-                readByte()
-            end;
-            local sizeupvalues = readVarInt()
-            for i = 1, sizeupvalues do
-                readVarInt()
-            end
-        end;
-        return {
-            maxstacksize = maxstacksize;
-            numparams = numparams;
-            nups = nups;
-            isvararg = isvararg;
-            linedefined = linedefined;
-            debugname = debugname;
-            sizecode = sizecode;
-            code = codelist;
-            debugcode = debugcodelist;
-            sizek = sizek;
-            k = klist;
-            sizep = sizep;
-            protos = protolist;
-            lineinfoenabled = lineinfoenabled;
-            instructionlineinfo = instructionlineinfo;
-            bytecodeid = bytecodeid
-        }
-    end;
-    if typesVersion == 3 then
-        local index = readByte()
-        while index ~= 0 do
-            readVarInt()
-            index = readByte()
-        end
-    end;
-    local protoCount = readVarInt()
-    local protoList = table_create(protoCount)
-    for i = 1, protoCount do
-        protoList[i] = readProto(i - 1)
-    end;
-    local mainProto = protoList[readVarInt() + 1]
-    assert(cursor == buffer_len(stream), "deserializer cursor position mismatch")
-    mainProto.debugname = "(main)"
-    return {
-        stringList = stringList;
-        protoList = protoList;
-        mainProto = mainProto;
-        typesVersion = typesVersion
-    }
-end;
-local function luau_load(module, env, luau_settings)
-    if luau_settings == nil then
-        luau_settings = luau_newsettings()
-    else
-        luau_validatesettings(luau_settings)
-    end;
-    if type(module) ~= "table" then
-        module = luau_deserialize(module, luau_settings)
-    end;
-    local protolist = module.protoList;
-    local mainProto = module.mainProto;
-    local breakHook = luau_settings.callHooks.breakHook;
-    local stepHook = luau_settings.callHooks.stepHook;
-    local interruptHook = luau_settings.callHooks.interruptHook;
-    local panicHook = luau_settings.callHooks.panicHook;
-    local alive = true;
-    local function luau_close()
-        alive = false
-    end;
-    local function luau_wrapclosure(module, proto, upvals)
-        local function luau_execute(...)
-            local debugging, stack, protos, code, varargs;
-            if luau_settings.errorHandling then
-                debugging, stack, protos, code, varargs = ...
-            else
-                local passed = table_pack(...)
-                stack = table_create(proto.maxstacksize)
-                varargs = {
-                    len = 0,
-                    list = {}
-                }
-                table_move(passed, 1, proto.numparams, 0, stack)
-                if proto.numparams < passed.n then
-                    local start = proto.numparams + 1;
-                    local len = passed.n - proto.numparams;
-                    varargs.len = len;
-                    table_move(passed, start, start + len - 1, 1, varargs.list)
-                end;
-                passed = nil;
-                debugging = {
-                    pc = 0,
-                    name = "NONE"
-                }
-                protos = proto.protos;
-                code = proto.code
-            end;
-            local top, pc, open_upvalues, generalized_iterators = -1, 1, setmetatable({}, {
-                __mode = "vs"
-            }), setmetatable({}, {
-                __mode = "ks"
-            })
-            local constants = proto.k;
-            local debugopcodes = proto.debugcode;
-            local extensions = luau_settings.extensions;
-            local handlingBreak = false;
-            local inst, op;
-            while alive do
-                if not handlingBreak then
-                    inst = code[pc]
-                    op = inst.opcode
-                end;
-                handlingBreak = false;
-                debugging.pc = pc;
-                debugging.top = top;
-                debugging.name = inst.opname;
-                pc = pc + 1;
-                if stepHook then
-                    stepHook(stack, debugging, proto, module, upvals)
-                end;
-                if op == 0 then
-                elseif op == 1 then
-                    if breakHook then
-                        local results = table.pack(breakHook(stack, debugging, proto, module, upvals))
-                        if results[1] then
-                            return table_unpack(results, 2, #results)
-                        end
-                    end;
-                    pc = pc - 1;
-                    op = debugopcodes[pc]
-                    handlingBreak = true
-                elseif op == 2 then
-                    stack[inst.A] = nil
-                elseif op == 3 then
-                    stack[inst.A] = inst.B == 1;
-                    pc = pc + inst.C
-                elseif op == 4 then
-                    stack[inst.A] = inst.D
-                elseif op == 5 then
-                    stack[inst.A] = inst.K
-                elseif op == 6 then
-                    stack[inst.A] = stack[inst.B]
-                elseif op == 7 then
-                    local kv = inst.K;
-                    stack[inst.A] = extensions[kv] or env[kv]
-                    pc = pc + 1
-                elseif op == 8 then
-                    local kv = inst.K;
-                    env[kv] = stack[inst.A]
-                    pc = pc + 1
-                elseif op == 9 then
-                    local uv = upvals[inst.B + 1]
-                    stack[inst.A] = uv.store[uv.index]
-                elseif op == 10 then
-                    local uv = upvals[inst.B + 1]
-                    uv.store[uv.index] = stack[inst.A]
-                elseif op == 11 then
-                    for i, uv in open_upvalues do
-                        if uv.index >= inst.A then
-                            uv.value = uv.store[uv.index]
-                            uv.store = uv;
-                            uv.index = "value"
-                            open_upvalues[i] = nil
-                        end
-                    end
-                elseif op == 12 then
-                    if luau_settings.useImportConstants then
-                        stack[inst.A] = inst.K
-                    else
-                        local count = inst.KC;
-                        local k0 = inst.K0;
-                        local import = extensions[k0] or env[k0]
-                        if count == 1 then
-                            stack[inst.A] = import
-                        elseif count == 2 then
-                            stack[inst.A] = import[inst.K1]
-                        elseif count == 3 then
-                            stack[inst.A] = import[inst.K1][inst.K2]
-                        end
-                    end;
-                    pc = pc + 1
-                elseif op == 13 then
-                    stack[inst.A] = stack[inst.B][stack[inst.C]]
-                elseif op == 14 then
-                    stack[inst.B][stack[inst.C]] = stack[inst.A]
-                elseif op == 15 then
-                    local index = inst.K;
-                    stack[inst.A] = stack[inst.B][index]
-                    pc = pc + 1
-                elseif op == 16 then
-                    local index = inst.K;
-                    stack[inst.B][index] = stack[inst.A]
-                    pc = pc + 1
-                elseif op == 17 then
-                    stack[inst.A] = stack[inst.B][inst.C + 1]
-                elseif op == 18 then
-                    stack[inst.B][inst.C + 1] = stack[inst.A]
-                elseif op == 19 then
-                    local newPrototype = protolist[protos[inst.D + 1]]
-                    local nups = newPrototype.nups;
-                    local upvalues = table_create(nups)
-                    stack[inst.A] = luau_wrapclosure(module, newPrototype, upvalues)
-                    for i = 1, nups do
-                        local pseudo = code[pc]
-                        pc = pc + 1;
-                        local type = pseudo.A;
-                        if type == 0 then
-                            local upvalue = {
-                                value = stack[pseudo.B],
-                                index = "value"
-                            }
-                            upvalue.store = upvalue;
-                            upvalues[i] = upvalue
-                        elseif type == 1 then
-                            local index = pseudo.B;
-                            local prev = open_upvalues[index]
-                            if prev == nil then
-                                prev = {
-                                    index = index,
-                                    store = stack
-                                }
-                                open_upvalues[index] = prev
-                            end;
-                            upvalues[i] = prev
-                        elseif type == 2 then
-                            upvalues[i] = upvals[pseudo.B + 1]
-                        end
-                    end
-                elseif op == 20 then
-                    local A = inst.A;
-                    local B = inst.B;
-                    local kv = inst.K;
-                    local sb = stack[B]
-                    stack[A + 1] = sb;
-                    pc = pc + 1;
-                    local useFallback = true;
-                    local useNativeHandler = luau_settings.useNativeNamecall;
-                    if useNativeHandler then
-                        local nativeNamecall = luau_settings.namecallHandler;
-                        local callInst = code[pc]
-                        local callOp = callInst.opcode;
-                        local callA, callB, callC = callInst.A, callInst.B, callInst.C;
-                        if stepHook then
-                            stepHook(stack, debugging, proto, module, upvals)
-                        end;
-                        if interruptHook then
-                            interruptHook(stack, debugging, proto, module, upvals)
-                        end;
-                        local params;
-                        if callB == 0 then
-                            params = top - callA
-                        else
-                            params = callB - 1
-                        end;
-                        local ret_list = table_pack(nativeNamecall(kv, table_unpack(stack, callA + 1, callA + params)))
-                        if ret_list[1] == true then
-                            useFallback = false;
-                            pc = pc + 1;
-                            inst = callInst;
-                            op = callOp;
-                            debugging.pc = pc;
-                            debugging.name = inst.opname;
-                            table_remove(ret_list, 1)
-                            local ret_num = ret_list.n - 1;
-                            if callC == 0 then
-                                top = callA + ret_num - 1
-                            else
-                                ret_num = callC - 1
-                            end;
-                            table_move(ret_list, 1, ret_num, callA, stack)
-                        end
-                    end;
-                    if useFallback then
-                        stack[A] = sb[kv]
-                    end
-                elseif op == 21 then
-                    if interruptHook then
-                        interruptHook(stack, debugging, proto, module, upvals)
-                    end;
-                    local A, B, C = inst.A, inst.B, inst.C;
-                    local params;
-                    if B == 0 then
-                        params = top - A
-                    else
-                        params = B - 1
-                    end;
-                    local func = stack[A]
-                    local ret_list = table_pack(func(table_unpack(stack, A + 1, A + params)))
-                    local ret_num = ret_list.n;
-                    if C == 0 then
-                        top = A + ret_num - 1
-                    else
-                        ret_num = C - 1
-                    end;
-                    table_move(ret_list, 1, ret_num, A, stack)
-                elseif op == 22 then
-                    if interruptHook then
-                        interruptHook(stack, debugging, proto, module, upvals)
-                    end;
-                    local A = inst.A;
-                    local B = inst.B;
-                    local b = B - 1;
-                    local nresults;
-                    if b == LUA_MULTRET then
-                        nresults = top - A + 1
-                    else
-                        nresults = B - 1
-                    end;
-                    return table_unpack(stack, A, A + nresults - 1)
-                elseif op == 23 then
-                    pc = pc + inst.D
-                elseif op == 24 then
-                    if interruptHook then
-                        interruptHook(stack, debugging, proto, module, upvals)
-                    end;
-                    pc = pc + inst.D
-                elseif op == 25 then
-                    if stack[inst.A] then
-                        pc = pc + inst.D
-                    end
-                elseif op == 26 then
-                    if not stack[inst.A] then
-                        pc = pc + inst.D
-                    end
-                elseif op == 27 then
-                    if stack[inst.A] == stack[inst.aux] then
-                        pc = pc + inst.D
-                    else
-                        pc = pc + 1
-                    end
-                elseif op == 28 then
-                    if stack[inst.A] <= stack[inst.aux] then
-                        pc = pc + inst.D
-                    else
-                        pc = pc + 1
-                    end
-                elseif op == 29 then
-                    if stack[inst.A] < stack[inst.aux] then
-                        pc = pc + inst.D
-                    else
-                        pc = pc + 1
-                    end
-                elseif op == 30 then
-                    if stack[inst.A] == stack[inst.aux] then
-                        pc = pc + 1
-                    else
-                        pc = pc + inst.D
-                    end
-                elseif op == 31 then
-                    if stack[inst.A] <= stack[inst.aux] then
-                        pc = pc + 1
-                    else
-                        pc = pc + inst.D
-                    end
-                elseif op == 32 then
-                    if stack[inst.A] < stack[inst.aux] then
-                        pc = pc + 1
-                    else
-                        pc = pc + inst.D
-                    end
-                elseif op == 33 then
-                    stack[inst.A] = stack[inst.B] + stack[inst.C]
-                elseif op == 34 then
-                    stack[inst.A] = stack[inst.B] - stack[inst.C]
-                elseif op == 35 then
-                    stack[inst.A] = stack[inst.B] * stack[inst.C]
-                elseif op == 36 then
-                    stack[inst.A] = stack[inst.B] / stack[inst.C]
-                elseif op == 37 then
-                    stack[inst.A] = stack[inst.B] % stack[inst.C]
-                elseif op == 38 then
-                    stack[inst.A] = stack[inst.B] ^ stack[inst.C]
-                elseif op == 39 then
-                    stack[inst.A] = stack[inst.B] + inst.K
-                elseif op == 40 then
-                    stack[inst.A] = stack[inst.B] - inst.K
-                elseif op == 41 then
-                    stack[inst.A] = stack[inst.B] * inst.K
-                elseif op == 42 then
-                    stack[inst.A] = stack[inst.B] / inst.K
-                elseif op == 43 then
-                    stack[inst.A] = stack[inst.B] % inst.K
-                elseif op == 44 then
-                    stack[inst.A] = stack[inst.B] ^ inst.K
-                elseif op == 45 then
-                    local value = stack[inst.B]
-                    if value then
-                        stack[inst.A] = stack[inst.C] or false
-                    else
-                        stack[inst.A] = value
-                    end
-                elseif op == 46 then
-                    local value = stack[inst.B]
-                    if value then
-                        stack[inst.A] = value
-                    else
-                        stack[inst.A] = stack[inst.C] or false
-                    end
-                elseif op == 47 then
-                    local value = stack[inst.B]
-                    if value then
-                        stack[inst.A] = inst.K or false
-                    else
-                        stack[inst.A] = value
-                    end
-                elseif op == 48 then
-                    local value = stack[inst.B]
-                    if value then
-                        stack[inst.A] = value
-                    else
-                        stack[inst.A] = inst.K or false
-                    end
-                elseif op == 49 then
-                    local B, C = inst.B, inst.C;
-                    local success, s = pcall(table_concat, stack, "", B, C)
-                    if not success then
-                        s = stack[B]
-                        for i = B + 1, C do
-                            s = s .. stack[i]
-                        end
-                    end;
-                    stack[inst.A] = s
-                elseif op == 50 then
-                    stack[inst.A] = not stack[inst.B]
-                elseif op == 51 then
-                    stack[inst.A] = -stack[inst.B]
-                elseif op == 52 then
-                    stack[inst.A] = #stack[inst.B]
-                elseif op == 53 then
-                    stack[inst.A] = table_create(inst.aux)
-                    pc = pc + 1
-                elseif op == 54 then
-                    local serialized = {}
-                    for _, id in pairs(inst.K) do
-                        serialized[constants[id + 1]] = nil
-                    end;
-                    stack[inst.A] = serialized
-                elseif op == 55 then
-                    local A = inst.A;
-                    local B = inst.B;
-                    local c = inst.C - 1;
-                    if c == LUA_MULTRET then
-                        c = top - B + 1
-                    end;
-                    table_move(stack, B, B + c - 1, inst.aux, stack[A])
-                    pc = pc + 1
-                elseif op == 56 then
-                    local A = inst.A;
-                    local limit = stack[A]
-                    if not ttisnumber(limit) then
-                        local number = tonumber(limit)
-                        if number == nil then
-                            error("invalid 'for' limit (number expected)")
-                        end;
-                        stack[A] = number;
-                        limit = number
-                    end;
-                    local step = stack[A + 1]
-                    if not ttisnumber(step) then
-                        local number = tonumber(step)
-                        if number == nil then
-                            error("invalid 'for' step (number expected)")
-                        end;
-                        stack[A + 1] = number;
-                        step = number
-                    end;
-                    local index = stack[A + 2]
-                    if not ttisnumber(index) then
-                        local number = tonumber(index)
-                        if number == nil then
-                            error("invalid 'for' index (number expected)")
-                        end;
-                        stack[A + 2] = number;
-                        index = number
-                    end;
-                    if step > 0 then
-                        if not(index <= limit) then
-                            pc = pc + inst.D
-                        end
-                    else
-                        if not(limit <= index) then
-                            pc = pc + inst.D
-                        end
-                    end
-                elseif op == 57 then
-                    if interruptHook then
-                        interruptHook(stack, debugging, proto, module, upvals)
-                    end;
-                    local A = inst.A;
-                    local limit = stack[A]
-                    local step = stack[A + 1]
-                    local index = stack[A + 2] + step;
-                    stack[A + 2] = index;
-                    if step > 0 then
-                        if index <= limit then
-                            pc = pc + inst.D
-                        end
-                    else
-                        if limit <= index then
-                            pc = pc + inst.D
-                        end
-                    end
-                elseif op == 58 then
-                    if interruptHook then
-                        interruptHook(stack, debugging, proto, module, upvals)
-                    end;
-                    local A = inst.A;
-                    local res = inst.K;
-                    top = A + 6;
-                    local it = stack[A]
-                    if (luau_settings.generalizedIteration == false) or ttisfunction(it) then
-                        local vals = {
-                            it(stack[A + 1], stack[A + 2])
-                        }
-                        table_move(vals, 1, res, A + 3, stack)
-                        if stack[A + 3] ~= nil then
-                            stack[A + 2] = stack[A + 3]
-                            pc = pc + inst.D
-                        else
-                            pc = pc + 1
-                        end
-                    else
-                        local ok, vals = coroutine_resume(generalized_iterators[inst], it, stack[A + 1], stack[A + 2])
-                        if not ok then
-                            error(vals)
-                        end;
-                        if vals == LUA_GENERALIZED_TERMINATOR then
-                            generalized_iterators[inst] = nil;
-                            pc = pc + 1
-                        else
-                            table_move(vals, 1, res, A + 3, stack)
-                            stack[A + 2] = stack[A + 3]
-                            pc = pc + inst.D
-                        end
-                    end
-                elseif op == 59 then
-                    if not ttisfunction(stack[inst.A]) then
-                        error(string_format("attempt to iterate over a %s value", type(stack[inst.A])))
-                    end;
-                    pc = pc + inst.D
-                elseif op == 60 then
-                    pc = pc + 1
-                elseif op == 61 then
-                    if not ttisfunction(stack[inst.A]) then
-                        error(string_format("attempt to iterate over a %s value", type(stack[inst.A])))
-                    end;
-                    pc = pc + inst.D
-                elseif op == 63 then
-                    local A = inst.A;
-                    local b = inst.B - 1;
-                    if b == LUA_MULTRET then
-                        b = varargs.len;
-                        top = A + b - 1
-                    end;
-                    table_move(varargs.list, 1, b, A, stack)
-                elseif op == 64 then
-                    local newPrototype = protolist[inst.K + 1]
-                    local nups = newPrototype.nups;
-                    local upvalues = table_create(nups)
-                    stack[inst.A] = luau_wrapclosure(module, newPrototype, upvalues)
-                    for i = 1, nups do
-                        local pseudo = code[pc]
-                        pc = pc + 1;
-                        local type = pseudo.A;
-                        if type == 0 then
-                            local upvalue = {
-                                value = stack[pseudo.B],
-                                index = "value"
-                            }
-                            upvalue.store = upvalue;
-                            upvalues[i] = upvalue
-                        elseif type == 2 then
-                            upvalues[i] = upvals[pseudo.B + 1]
-                        end
-                    end
-                elseif op == 65 then
-                elseif op == 66 then
-                    local kv = inst.K;
-                    stack[inst.A] = kv;
-                    pc = pc + 1
-                elseif op == 67 then
-                    if interruptHook then
-                        interruptHook(stack, debugging, proto, module, upvals)
-                    end;
-                    pc = pc + inst.E
-                elseif op == 68 then
-                elseif op == 69 then
-                    inst.E = inst.E + 1
-                elseif op == 70 then
-                    error("encountered unhandled CAPTURE")
-                elseif op == 71 then
-                    stack[inst.A] = inst.K - stack[inst.C]
-                elseif op == 72 then
-                    stack[inst.A] = inst.K / stack[inst.C]
-                elseif op == 73 then
-                elseif op == 74 then
-                    pc = pc + 1
-                elseif op == 75 then
-                    pc = pc + 1
-                elseif op == 76 then
-                    local iterator = stack[inst.A]
-                    if luau_settings.generalizedIteration and not ttisfunction(iterator) then
-                        local loopInstruction = code[pc + inst.D]
-                        if generalized_iterators[loopInstruction] == nil then
-                            local function gen_iterator(...)
-                                for r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, r16, r17, r18, r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31, r32, r33, r34, r35, r36, r37, r38, r39, r40, r41, r42, r43, r44, r45, r46, r47, r48, r49, r50, r51, r52, r53, r54, r55, r56, r57, r58, r59, r60, r61, r62, r63, r64, r65, r66, r67, r68, r69, r70, r71, r72, r73, r74, r75, r76, r77, r78, r79, r80, r81, r82, r83, r84, r85, r86, r87, r88, r89, r90, r91, r92, r93, r94, r95, r96, r97, r98, r99, r100, r101, r102, r103, r104, r105, r106, r107, r108, r109, r110, r111, r112, r113, r114, r115, r116, r117, r118, r119, r120, r121, r122, r123, r124, r125, r126, r127, r128, r129, r130, r131, r132, r133, r134, r135, r136, r137, r138, r139, r140, r141, r142, r143, r144, r145, r146, r147, r148, r149, r150, r151, r152, r153, r154, r155, r156, r157, r158, r159, r160, r161, r162, r163, r164, r165, r166, r167, r168, r169, r170, r171, r172, r173, r174, r175, r176, r177, r178, r179, r180, r181, r182, r183, r184, r185, r186, r187, r188, r189, r190, r191, r192, r193, r194, r195, r196, r197, r198, r199, r200 in ... do
-                                    coroutine_yield({r1,r2,r3,r4,r5,r6,r7,r8,r9,r10,r11,r12,r13,r14,r15,r16,r17,r18,r19,r20,r21,r22,r23,r24,r25,r26,r27,r28,r29,r30,r31,r32,r33,r34,r35,r36,r37,r38,r39,r40,r41,r42,r43,r44,r45,r46,r47,r48,r49,r50,r51,r52,r53,r54,r55,r56,r57,r58,r59,r60,r61,r62,r63,r64,r65,r66,r67,r68,r69,r70,r71,r72,r73,r74,r75,r76,r77,r78,r79,r80,r81,r82,r83,r84,r85,r86,r87,r88,r89,r90,r91,r92,r93,r94,r95,r96,r97,r98,r99,r100,r101,r102,r103,r104,r105,r106,r107,r108,r109,r110,r111,r112,r113,r114,r115,r116,r117,r118,r119,r120,r121,r122,r123,r124,r125,r126,r127,r128,r129,r130,r131,r132,r133,r134,r135,r136,r137,r138,r139,r140,r141,r142,r143,r144,r145,r146,r147,r148,r149,r150,r151,r152,r153,r154,r155,r156,r157,r158,r159,r160,r161,r162,r163,r164,r165,r166,r167,r168,r169,r170,r171,r172,r173,r174,r175,r176,r177,r178,r179,r180,r181,r182,r183,r184,r185,r186,r187,r188,r189,r190,r191,r192,r193,r194,r195,r196,r197,r198,r199,r200})
-                                end;
-                                coroutine_yield(LUA_GENERALIZED_TERMINATOR)
-                            end;
-                            generalized_iterators[loopInstruction] = coroutine_create(gen_iterator)
-                        end
-                    end;
-                    pc = pc + inst.D
-                elseif op == 77 then
-                    local kn = inst.KN;
-                    if (stack[inst.A] == nil) ~= kn then
-                        pc = pc + inst.D
-                    else
-                        pc = pc + 1
-                    end
-                elseif op == 78 then
-                    local kv = inst.K;
-                    local kn = inst.KN;
-                    local ra = stack[inst.A]
-                    if (ttisboolean(ra) and (ra == kv)) ~= kn then
-                        pc = pc + inst.D
-                    else
-                        pc = pc + 1
-                    end
-                elseif op == 79 then
-                    local kv = inst.K;
-                    local kn = inst.KN;
-                    local ra = stack[inst.A]
-                    if (ra == kv) ~= kn then
-                        pc = pc + inst.D
-                    else
-                        pc = pc + 1
-                    end
-                elseif op == 80 then
-                    local kv = inst.K;
-                    local kn = inst.KN;
-                    local ra = stack[inst.A]
-                    if (ra == kv) ~= kn then
-                        pc = pc + inst.D
-                    else
-                        pc = pc + 1
-                    end
-                elseif op == 81 then
-                    stack[inst.A] = math.floor(stack[inst.B] / stack[inst.C])
-                elseif op == 82 then
-                    stack[inst.A] = math.floor(stack[inst.B] / inst.K)
-                else
-                    error("Unsupported Opcode: " .. inst.opname .. " op: " .. op)
-                end
-            end;
-            for i, uv in open_upvalues do
-                uv.value = uv.store[uv.index]
-                uv.store = uv;
-                uv.index = "value"
-                open_upvalues[i] = nil
-            end;
-            for i, iter in generalized_iterators do
-                coroutine_close(iter)
-                generalized_iterators[i] = nil
-            end
-        end;
-        local function wrapped(...)
-            local passed = table_pack(...)
-            local stack = table_create(proto.maxstacksize)
-            local varargs = {
-                len = 0,
-                list = {}
-            }
-            table_move(passed, 1, proto.numparams, 0, stack)
-            if proto.numparams < passed.n then
-                local start = proto.numparams + 1;
-                local len = passed.n - proto.numparams;
-                varargs.len = len;
-                table_move(passed, start, start + len - 1, 1, varargs.list)
-            end;
-            passed = nil;
-            local debugging = {
-                pc = 0,
-                name = "NONE"
-            }
-            local result;
-            if luau_settings.errorHandling then
-                result = table_pack(pcall(luau_execute, debugging, stack, proto.protos, proto.code, varargs))
-            else
-                result = table_pack(true, luau_execute(debugging, stack, proto.protos, proto.code, varargs))
-            end;
-            if result[1] then
-                return table_unpack(result, 2, result.n)
-            else
-                local message = result[2]
-                if panicHook then
-                    panicHook(message, stack, debugging, proto, module, upvals)
-                end;
-                if ttisstring(message) == false then
-                    if luau_settings.allowProxyErrors then
-                        error(message)
-                    else
-                        message = type(message)
-                    end
-                end;
-                if proto.lineinfoenabled then
-                    return error(string_format("Fiu VM Error { Name: %s Line: %s PC: %s Opcode: %s }: %s", proto.debugname, proto.instructionlineinfo[debugging.pc], debugging.pc, debugging.name, message), 0)
-                else
-                    return error(string_format("Fiu VM Error { Name: %s PC: %s Opcode: %s }: %s", proto.debugname, debugging.pc, debugging.name, message), 0)
-                end
-            end
-        end;
-        if luau_settings.errorHandling then
-            return wrapped
-        else
-            return luau_execute
-        end
-    end;
-    return luau_wrapclosure(module, mainProto), luau_close
-end;]=]
-local DecompresserSource = [=[
-local function fromBase64(data)
-    local b = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-    local output = {}
-    local map = {}
-    for i = 1, #b do
-        map[b:sub(i, i)] = i - 1
-    end
-    map["="] = 0
-    local i = 1
-    local len = #data
-    while i <= len do
-        local c1 = map[data:sub(i, i)]
-        local c2 = map[data:sub(i + 1, i + 1)]
-        local c3 = map[data:sub(i + 2, i + 2)]
-        local c4 = map[data:sub(i + 3, i + 3)]
-        if c1 == nil or c2 == nil then break end
-        local b1 = bit32.bor(bit32.lshift(c1, 2), bit32.rshift(c2, 4))
-        output[#output + 1] = string.char(b1)
-        if data:sub(i + 2, i + 2) ~= "=" then
-            local b2 = bit32.bor(bit32.lshift(bit32.band(c2, 0x0F), 4), bit32.rshift(c3, 2))
-            output[#output + 1] = string.char(b2)
-        end
-        if data:sub(i + 3, i + 3) ~= "=" then
-            local b3 = bit32.bor(bit32.lshift(bit32.band(c3, 0x03), 6), c4)
-            output[#output + 1] = string.char(b3)
-        end
-        i = i + 4
-    end
-    return table.concat(output)
-end
-local LZW_CODE_SIZE = 12
-local LZW_MAX_CODE = (2 ^ LZW_CODE_SIZE) - 1
-local LZW_CLEAR_CODE = 256
-local LZW_EOF_CODE = 257
-local function createBitWriter()
-    local bytes = {}
-    local currentByte = 0
-    local bitPos = 0
-    local byteIndex = 1
-    local writer = {}
-    function writer.write(code, bits)
-        for i = 0, bits - 1 do
-            local bit = bit32.extract(code, i)
-            if bit == 1 then
-                currentByte = bit32.bor(currentByte, bit32.lshift(1, bitPos))
-            end
-            bitPos = bitPos + 1
-            if bitPos == 8 then
-                bytes[byteIndex] = string.char(currentByte)
-                byteIndex = byteIndex + 1
-                currentByte = 0
-                bitPos = 0
-            end
-        end
-    end
-    function writer.finish()
-        if bitPos > 0 then
-            bytes[byteIndex] = string.char(currentByte)
-        end
-        return table.concat(bytes)
-    end
-    return writer
-end
-local function createBitReader(data)
-    local reader = {}
-    local byteIndex = 1
-    local bitPos = 0
-    local len = #data
-    function reader.read(bits)
-        local code = 0
-        for i = 0, bits - 1 do
-            if byteIndex > len then
-                return nil
-            end
-            local byte = data:byte(byteIndex)
-            local bit = bit32.extract(byte, bitPos)
-            if bit == 1 then
-                code = bit32.bor(code, bit32.lshift(1, i))
-            end
-            bitPos = bitPos + 1
-            if bitPos == 8 then
-                byteIndex = byteIndex + 1
-                bitPos = 0
-            end
-        end
-        return code
-    end
-    return reader
-end
-local function Decompress(input)
-    local dict = {}
-    local dictSize = 258
-    for i = 0, 255 do
-        dict[i] = string.char(i)
-    end
-    local reader = createBitReader(input)
-    local result = {}
-    local code = reader.read(LZW_CODE_SIZE)
-    if code == nil or code ~= LZW_CLEAR_CODE then
-        error("LZWDECODE Error: Malformed stream start or missing clear code.")
-    end
-    local oldCode = reader.read(LZW_CODE_SIZE)
-    if oldCode == nil or oldCode == LZW_EOF_CODE then
-        return ""
-    end
-    result[#result + 1] = dict[oldCode]
-    local oldString = dict[oldCode]
-    while true do
-        local newCode = reader.read(LZW_CODE_SIZE)
-        if newCode == nil or newCode == LZW_EOF_CODE then
-            break
-        end
-        if newCode == LZW_CLEAR_CODE then
-            dict = {}
-            dictSize = 258
-            for i = 0, 255 do
-                dict[i] = string.char(i)
-            end
-            oldCode = reader.read(LZW_CODE_SIZE)
-            if oldCode == nil or oldCode == LZW_EOF_CODE then break end
-            
-            oldString = dict[oldCode]
-            result[#result + 1] = oldString
-            continue
-        end
-        local newString
-        if dict[newCode] then
-            newString = dict[newCode]
-        elseif newCode == dictSize then
-            newString = oldString .. oldString:sub(1, 1)
-        else
-            error("LZWDECODE Error: Invalid code " .. tostring(newCode) .. ". Input likely corrupted")
-        end
-        result[#result + 1] = newString
-        if dictSize <= LZW_MAX_CODE then
-            dict[dictSize] = oldString .. newString:sub(1, 1)
-            dictSize = dictSize + 1
-        end
-        oldCode = newCode
-        oldString = newString
-    end
-    return table.concat(result)
-end
-function Decode(str)
-    if type(str) ~= "string" then
-        error("Input must be a string.")
-    end
-    if #str == 0 then
-        return ""
-    end
-    local fromB64 = fromBase64(str)
-    return Decompress(fromB64)
-end]=]
+local VMSource = [=[local a=type local b=pcall local c=error local d=tonumber local e=assert local f
+=setmetatable local g=string.format local h=table.move local i=table.pack local
+j=table.unpack local k=table.create local l=table.insert local m=table.remove
+local n=table.concat local o=coroutine.create local p=coroutine.yield local q=
+coroutine.resume local r=coroutine.close local s=buffer.fromstring local t=
+buffer.len local u=buffer.readu8 local v=buffer.readu32 local w=buffer.
+readstring local x=buffer.readf32 local y=buffer.readf64 local z=bit32.bor local
+A=bit32.band local B=bit32.btest local C=bit32.rshift local D=bit32.lshift local
+E=bit32.extract local F=function(F)return a(F)=='number'end local G=function(G)
+return a(G)=='string'end local H=function(H)return a(H)=='boolean'end local I=
+function(I)return a(I)=='function'end local J={{'NOP',0,0,false},{'BREAK',0,0,
+false},{'LOADNIL',1,0,false},{'LOADB',3,0,false},{'LOADN',4,0,false},{'LOADK',4,
+3,false},{'MOVE',2,0,false},{'GETGLOBAL',1,1,true},{'SETGLOBAL',1,1,true},{
+'GETUPVAL',2,0,false},{'SETUPVAL',2,0,false},{'CLOSEUPVALS',1,0,false},{
+'GETIMPORT',4,4,true},{'GETTABLE',3,0,false},{'SETTABLE',3,0,false},{
+'GETTABLEKS',3,1,true},{'SETTABLEKS',3,1,true},{'GETTABLEN',3,0,false},{
+'SETTABLEN',3,0,false},{'NEWCLOSURE',4,0,false},{'NAMECALL',3,1,true},{'CALL',3,
+0,false},{'RETURN',2,0,false},{'JUMP',4,0,false},{'JUMPBACK',4,0,false},{
+'JUMPIF',4,0,false},{'JUMPIFNOT',4,0,false},{'JUMPIFEQ',4,0,true},{'JUMPIFLE',4,
+0,true},{'JUMPIFLT',4,0,true},{'JUMPIFNOTEQ',4,0,true},{'JUMPIFNOTLE',4,0,true},
+{'JUMPIFNOTLT',4,0,true},{'ADD',3,0,false},{'SUB',3,0,false},{'MUL',3,0,false},{
+'DIV',3,0,false},{'MOD',3,0,false},{'POW',3,0,false},{'ADDK',3,2,false},{'SUBK',
+3,2,false},{'MULK',3,2,false},{'DIVK',3,2,false},{'MODK',3,2,false},{'POWK',3,2,
+false},{'AND',3,0,false},{'OR',3,0,false},{'ANDK',3,2,false},{'ORK',3,2,false},{
+'CONCAT',3,0,false},{'NOT',2,0,false},{'MINUS',2,0,false},{'LENGTH',2,0,false},{
+'NEWTABLE',2,0,true},{'DUPTABLE',4,3,false},{'SETLIST',3,0,true},{'FORNPREP',4,0
+,false},{'FORNLOOP',4,0,false},{'FORGLOOP',4,8,true},{'FORGPREP_INEXT',4,0,false
+},{'FASTCALL3',3,1,true},{'FORGPREP_NEXT',4,0,false},{'DEP_FORGLOOP_NEXT',0,0,
+false},{'GETVARARGS',2,0,false},{'DUPCLOSURE',4,3,false},{'PREPVARARGS',1,0,
+false},{'LOADKX',1,1,true},{'JUMPX',5,0,false},{'FASTCALL',3,0,false},{
+'COVERAGE',5,0,false},{'CAPTURE',2,0,false},{'SUBRK',3,7,false},{'DIVRK',3,7,
+false},{'FASTCALL1',3,0,false},{'FASTCALL2',3,0,true},{'FASTCALL2K',3,1,true},{
+'FORGPREP',4,0,false},{'JUMPXEQKNIL',4,5,true},{'JUMPXEQKB',4,5,true},{
+'JUMPXEQKN',4,6,true},{'JUMPXEQKS',4,6,true},{'IDIV',3,0,false},{'IDIVK',3,2,
+false}}local K=-1 local L=-2 local function M()return{vectorCtor=function()c(
+'vectorCtor was not provided')end,vectorSize=4,useNativeNamecall=false,
+namecallHandler=function()c('Native __namecall handler was not provided')end,
+extensions={},callHooks={},errorHandling=true,generalizedIteration=true,
+allowProxyErrors=false,useImportConstants=false,staticEnvironment={},decodeOp=
+function(N)return N end}end local function N(O)e(a(O)=='table',
+'luau_settings should be a table')e(a(O.vectorCtor)=='function',
+'luau_settings.vectorCtor should be a function')e(a(O.vectorSize)=='number',
+'luau_settings.vectorSize should be a number')e(a(O.useNativeNamecall)==
+'boolean','luau_settings.useNativeNamecall should be a boolean')e(a(O.
+namecallHandler)=='function',
+'luau_settings.namecallHandler should be a function')e(a(O.extensions)=='table',
+'luau_settings.extensions should be a table of functions')e(a(O.callHooks)==
+'table','luau_settings.callHooks should be a table of functions')e(a(O.
+errorHandling)=='boolean','luau_settings.errorHandling should be a boolean')e(a(
+O.generalizedIteration)=='boolean',
+'luau_settings.generalizedIteration should be a boolean')e(a(O.allowProxyErrors)
+=='boolean','luau_settings.allowProxyErrors should be a boolean')e(a(O.
+staticEnvironment)=='table','luau_settings.staticEnvironment should be a table')
+e(a(O.useImportConstants)=='boolean',
+'luau_settings.useImportConstants should be a boolean')e(a(O.decodeOp)==
+'function','luau_settings.decodeOp should be a function')end local function O(P,
+Q)local R if Q==nil then R=P.mainProto else R=P.protoList[Q]end local S=-1 e(R.
+lineinfoenabled,'proto must have debug enabled')for T=1,R.sizecode do local U=R.
+instructionlineinfo[T]if U>S then S=U end end for T,U in R.protos do local V=O(P
+,U)if V>S then S=V end end return S end local function P(Q,R,S,T,U)local V if R
+==nil then V=Q.mainProto else V=Q.protoList[R]end e(V.lineinfoenabled,
+'proto must have debug enabled')local W={}for X=1,V.sizecode do local Y=V.code[X
+]local Z=V.instructionlineinfo[X]if Y.opcode==69 then local _=Y.E if(W[Z]or 0)<=
+_ then W[Z]=_ end end end T(V.debugname,V.linedefined,S,W,U)for X,Y in V.protos
+do P(Q,Y,S+1,T,U)end end local function Q(R,S,T)e(a(R)=='table',
+'module must be a table')e(a(S)=='number'or a(S)=='nil',
+'protoid must be a number or nil')e(a(T)=='function',
+'callback must be a function')P(R,S,0,T,O(R))end local function R(S,T,U,V,W)
+local X=S[U]if T<2 or X==nil then return X end X=X[V]if T<3 or X==nil then
+return X end X=X[W]return X end local function S(T,U)if U==nil then U=M()else N(
+U)end local V if a(T)=='string'then V=s(T)else V=T end local W=0 local function
+X()local Y=u(V,W)W=W+1 return Y end local function Y()local Z=v(V,W)W=W+4 return
+Z end local function Z()local _=x(V,W)W=W+4 return _ end local function _()local
+aa=y(V,W)W=W+8 return aa end local function aa()local ab=0 for ac=0,4 do local
+ad=X()ab=z(ab,D(A(ad,127),ac*7))if not B(ad,128)then break end end return ab end
+local function ab()local ac=aa()if ac==0 then return''else local ad=w(V,W,ac)W=W
++ac return ad end end local ac=X()local ad=0 if ac==0 then c(
+'the provided bytecode is an error message',0)elseif ac<3 or ac>6 then c(
+'the version of the provided bytecode is unsupported',0)elseif ac>=4 then ad=X()
+end local ae=aa()local af=k(ae)for ag=1,ae do af[ag]=ab()end local function ag(
+ah)local ai=U.decodeOp(Y())local aj=A(ai,255)local ak=J[aj+1]local al=ak[1]local
+am=ak[2]local an=ak[3]local ao=ak[4]local ap={opcode=aj,opname=al,opmode=am,
+kmode=an,usesAux=ao}l(ah,ap)if am==1 then ap.A=A(C(ai,8),255)elseif am==2 then
+ap.A=A(C(ai,8),255)ap.B=A(C(ai,16),255)elseif am==3 then ap.A=A(C(ai,8),255)ap.B
+=A(C(ai,16),255)ap.C=A(C(ai,24),255)elseif am==4 then ap.A=A(C(ai,8),255)local
+aq=A(C(ai,16),65535)if aq<32768 then ap.D=aq else ap.D=aq-65536 end elseif am==5
+then local aq=A(C(ai,8),16777215)if aq<8388608 then ap.E=aq else ap.E=aq-
+16777216 end end if ao then local aq=Y()ap.aux=aq l(ah,{value=aq,opname=
+'auxvalue'})end return ao end local function ah(ai,aj)local ak=ai.kmode if ak==1
+then ai.K=aj[ai.aux+1]elseif ak==2 then ai.K=aj[ai.C+1]elseif ak==3 then ai.K=aj
+[ai.D+1]elseif ak==4 then local al=ai.aux local am=C(al,30)local an=A(C(al,20),
+1023)ai.K0=aj[an+1]ai.KC=am if am==2 then local ao=A(C(al,10),1023)ai.K1=aj[ao+1
+]elseif am==3 then local ao=A(C(al,10),1023)local ap=A(C(al,0),1023)ai.K1=aj[ao+
+1]ai.K2=aj[ap+1]end if U.useImportConstants then ai.K=R(U.staticEnvironment,am,
+ai.K0,ai.K1,ai.K2)end elseif ak==5 then ai.K=E(ai.aux,0,1)==1 ai.KN=E(ai.aux,31,
+1)==1 elseif ak==6 then ai.K=aj[E(ai.aux,0,24)+1]ai.KN=E(ai.aux,31,1)==1 elseif
+ak==7 then ai.K=aj[ai.B+1]elseif ak==8 then ai.K=A(ai.aux,15)end end
+local function ai(aj)local ak=X()local al=X()local am=X()local an=X()~=0 if ac>=
+4 then X()local ao=aa()W=W+ao end local ao=aa()local ap=k(ao)local aq=false for
+ar=1,ao do if aq then aq=false else aq=ag(ap)end end local ar=k(ao)for as=1,ao
+do ar[as]=ap[as].opcode end local as=aa()local at=k(as)for au=1,as do local av=
+X()local aw if av==0 then aw=nil elseif av==1 then aw=X()~=0 elseif av==2 then
+aw=_()elseif av==3 then aw=af[aa()]elseif av==4 then aw=Y()elseif av==5 then
+local ax=aa()aw=k(ax)for ay=1,ax do aw[ay]=aa()end elseif av==6 then aw=aa()
+elseif av==7 then local ax,ay,az,aA=Z(),Z(),Z(),Z()if U.vectorSize==4 then aw=U.
+vectorCtor(ax,ay,az,aA)else aw=U.vectorCtor(ax,ay,az)end end at[au]=aw end for
+au=1,ao do ah(ap[au],at)end local au=aa()local av=k(au)for aw=1,au do av[aw]=aa(
+)+1 end local aw=aa()local ax=aa()local ay if ax~=0 then ay=af[ax]else ay='(??)'
+end local az=X()~=0 local aA if az then local aB=X()local aC=C((ao-1),aB)+1
+local aD=k(ao)local aE=k(aC)local aF=0 for aG=1,ao do aF=aF+X()aD[aG]=aF end
+local aG=0 for aH=1,aC do aG=aG+Y()aE[aH]=aG%(4294967296)end aA=k(ao)for aH=1,ao
+do l(aA,aE[C(aH-1,aB)+1]+aD[aH])end end if X()~=0 then local aB=aa()for aC=1,aB
+do aa()aa()aa()X()end local aC=aa()for aD=1,aC do aa()end end return{
+maxstacksize=ak,numparams=al,nups=am,isvararg=an,linedefined=aw,debugname=ay,
+sizecode=ao,code=ap,debugcode=ar,sizek=as,k=at,sizep=au,protos=av,
+lineinfoenabled=az,instructionlineinfo=aA,bytecodeid=aj}end if ad==3 then local
+aj=X()while aj~=0 do aa()aj=X()end end local aj=aa()local ak=k(aj)for al=1,aj do
+ak[al]=ai(al-1)end local al=ak[aa()+1]e(W==t(V),
+'deserializer cursor position mismatch')al.debugname='(main)'return{stringList=
+af,protoList=ak,mainProto=al,typesVersion=ad}end local function aa(ab,ac,ad)if
+ad==nil then ad=M()else N(ad)end if a(ab)~='table'then ab=S(ab,ad)end local ae=
+ab.protoList local af=ab.mainProto local ag=ad.callHooks.breakHook local ah=ad.
+callHooks.stepHook local ai=ad.callHooks.interruptHook local aj=ad.callHooks.
+panicHook local ak=true local function al()ak=false end local function am(an,ao,
+ap)local function aq(...)local ar,as,at,au,av if ad.errorHandling then ar,as,at,
+au,av=...else local aw=i(...)as=k(ao.maxstacksize)av={len=0,list={}}h(aw,1,ao.
+numparams,0,as)if ao.numparams<aw.n then local ax=ao.numparams+1 local ay=aw.n-
+ao.numparams av.len=ay h(aw,ax,ax+ay-1,1,av.list)end aw=nil ar={pc=0,name='NONE'
+}at=ao.protos au=ao.code end local aw,ax,ay,az=-1,1,f({},{__mode='vs'}),f({},{
+__mode='ks'})local aA=ao.k local aB=ao.debugcode local aC=ad.extensions local aD
+=false local aE,aF while ak do if not aD then aE=au[ax]aF=aE.opcode end aD=false
+ar.pc=ax ar.top=aw ar.name=aE.opname ax=ax+1 if ah then ah(as,ar,ao,an,ap)end if
+aF==0 then elseif aF==1 then if ag then local aG=table.pack(ag(as,ar,ao,an,ap))
+if aG[1]then return j(aG,2,#aG)end end ax=ax-1 aF=aB[ax]aD=true elseif aF==2
+then as[aE.A]=nil elseif aF==3 then as[aE.A]=aE.B==1 ax=ax+aE.C elseif aF==4
+then as[aE.A]=aE.D elseif aF==5 then as[aE.A]=aE.K elseif aF==6 then as[aE.A]=as
+[aE.B]elseif aF==7 then local aG=aE.K as[aE.A]=aC[aG]or ac[aG]ax=ax+1 elseif aF
+==8 then local aG=aE.K ac[aG]=as[aE.A]ax=ax+1 elseif aF==9 then local aG=ap[aE.B
++1]as[aE.A]=aG.store[aG.index]elseif aF==10 then local aG=ap[aE.B+1]aG.store[aG.
+index]=as[aE.A]elseif aF==11 then for aG,aH in ay do if aH.index>=aE.A then aH.
+value=aH.store[aH.index]aH.store=aH aH.index='value'ay[aG]=nil end end elseif aF
+==12 then if ad.useImportConstants then as[aE.A]=aE.K else local aG=aE.KC local
+aH=aE.K0 local T=aC[aH]or ac[aH]if aG==1 then as[aE.A]=T elseif aG==2 then as[aE
+.A]=T[aE.K1]elseif aG==3 then as[aE.A]=T[aE.K1][aE.K2]end end ax=ax+1 elseif aF
+==13 then as[aE.A]=as[aE.B][as[aE.C] ]elseif aF==14 then as[aE.B][as[aE.C] ]=as[
+aE.A]elseif aF==15 then local aG=aE.K as[aE.A]=as[aE.B][aG]ax=ax+1 elseif aF==16
+then local aG=aE.K as[aE.B][aG]=as[aE.A]ax=ax+1 elseif aF==17 then as[aE.A]=as[
+aE.B][aE.C+1]elseif aF==18 then as[aE.B][aE.C+1]=as[aE.A]elseif aF==19 then
+local aG=ae[at[aE.D+1] ]local aH=aG.nups local T=k(aH)as[aE.A]=am(an,aG,T)for U=
+1,aH do local V=au[ax]ax=ax+1 local W=V.A if W==0 then local X={value=as[V.B],
+index='value'}X.store=X T[U]=X elseif W==1 then local X=V.B local Y=ay[X]if Y==
+nil then Y={index=X,store=as}ay[X]=Y end T[U]=Y elseif W==2 then T[U]=ap[V.B+1]
+end end elseif aF==20 then local aG=aE.A local aH=aE.B local T=aE.K local U=as[
+aH]as[aG+1]=U ax=ax+1 local V=true local W=ad.useNativeNamecall if W then local
+X=ad.namecallHandler local Y=au[ax]local Z=Y.opcode local _,aI,aJ=Y.A,Y.B,Y.C if
+ah then ah(as,ar,ao,an,ap)end if ai then ai(as,ar,ao,an,ap)end local aK if aI==0
+then aK=aw-_ else aK=aI-1 end local aL=i(X(T,j(as,_+1,_+aK)))if aL[1]==true then
+V=false ax=ax+1 aE=Y aF=Z ar.pc=ax ar.name=aE.opname m(aL,1)local aM=aL.n-1 if
+aJ==0 then aw=_+aM-1 else aM=aJ-1 end h(aL,1,aM,_,as)end end if V then as[aG]=U[
+T]end elseif aF==21 then if ai then ai(as,ar,ao,an,ap)end local aG,aH,aI=aE.A,aE
+.B,aE.C local aJ if aH==0 then aJ=aw-aG else aJ=aH-1 end local aK=as[aG]local aL
+=i(aK(j(as,aG+1,aG+aJ)))local aM=aL.n if aI==0 then aw=aG+aM-1 else aM=aI-1 end
+h(aL,1,aM,aG,as)elseif aF==22 then if ai then ai(as,ar,ao,an,ap)end local aG=aE.
+A local aH=aE.B local aI=aH-1 local aJ if aI==K then aJ=aw-aG+1 else aJ=aH-1 end
+return j(as,aG,aG+aJ-1)elseif aF==23 then ax=ax+aE.D elseif aF==24 then if ai
+then ai(as,ar,ao,an,ap)end ax=ax+aE.D elseif aF==25 then if as[aE.A]then ax=ax+
+aE.D end elseif aF==26 then if not as[aE.A]then ax=ax+aE.D end elseif aF==27
+then if as[aE.A]==as[aE.aux]then ax=ax+aE.D else ax=ax+1 end elseif aF==28 then
+if as[aE.A]<=as[aE.aux]then ax=ax+aE.D else ax=ax+1 end elseif aF==29 then if as
+[aE.A]<as[aE.aux]then ax=ax+aE.D else ax=ax+1 end elseif aF==30 then if as[aE.A]
+==as[aE.aux]then ax=ax+1 else ax=ax+aE.D end elseif aF==31 then if as[aE.A]<=as[
+aE.aux]then ax=ax+1 else ax=ax+aE.D end elseif aF==32 then if as[aE.A]<as[aE.aux
+]then ax=ax+1 else ax=ax+aE.D end elseif aF==33 then as[aE.A]=as[aE.B]+as[aE.C]
+elseif aF==34 then as[aE.A]=as[aE.B]-as[aE.C]elseif aF==35 then as[aE.A]=as[aE.B
+]*as[aE.C]elseif aF==36 then as[aE.A]=as[aE.B]/as[aE.C]elseif aF==37 then as[aE.
+A]=as[aE.B]%as[aE.C]elseif aF==38 then as[aE.A]=as[aE.B]^as[aE.C]elseif aF==39
+then as[aE.A]=as[aE.B]+aE.K elseif aF==40 then as[aE.A]=as[aE.B]-aE.K elseif aF
+==41 then as[aE.A]=as[aE.B]*aE.K elseif aF==42 then as[aE.A]=as[aE.B]/aE.K
+elseif aF==43 then as[aE.A]=as[aE.B]%aE.K elseif aF==44 then as[aE.A]=as[aE.B]^
+aE.K elseif aF==45 then local aG=as[aE.B]if aG then as[aE.A]=as[aE.C]or false
+else as[aE.A]=aG end elseif aF==46 then local aG=as[aE.B]if aG then as[aE.A]=aG
+else as[aE.A]=as[aE.C]or false end elseif aF==47 then local aG=as[aE.B]if aG
+then as[aE.A]=aE.K or false else as[aE.A]=aG end elseif aF==48 then local aG=as[
+aE.B]if aG then as[aE.A]=aG else as[aE.A]=aE.K or false end elseif aF==49 then
+local aG,aH=aE.B,aE.C local aI,aJ=b(n,as,'',aG,aH)if not aI then aJ=as[aG]for aK
+=aG+1,aH do aJ=aJ..as[aK]end end as[aE.A]=aJ elseif aF==50 then as[aE.A]=not as[
+aE.B]elseif aF==51 then as[aE.A]=-as[aE.B]elseif aF==52 then as[aE.A]=#as[aE.B]
+elseif aF==53 then as[aE.A]=k(aE.aux)ax=ax+1 elseif aF==54 then local aG={}for
+aH,aI in pairs(aE.K)do aG[aA[aI+1] ]=nil end as[aE.A]=aG elseif aF==55 then
+local aG=aE.A local aH=aE.B local aI=aE.C-1 if aI==K then aI=aw-aH+1 end h(as,aH
+,aH+aI-1,aE.aux,as[aG])ax=ax+1 elseif aF==56 then local aG=aE.A local aH=as[aG]
+if not F(aH)then local aI=d(aH)if aI==nil then c(
+"invalid 'for' limit (number expected)")end as[aG]=aI aH=aI end local aI=as[aG+1
+]if not F(aI)then local aJ=d(aI)if aJ==nil then c(
+"invalid 'for' step (number expected)")end as[aG+1]=aJ aI=aJ end local aJ=as[aG+
+2]if not F(aJ)then local aK=d(aJ)if aK==nil then c(
+"invalid 'for' index (number expected)")end as[aG+2]=aK aJ=aK end if aI>0 then
+if not(aJ<=aH)then ax=ax+aE.D end else if not(aH<=aJ)then ax=ax+aE.D end end
+elseif aF==57 then if ai then ai(as,ar,ao,an,ap)end local aG=aE.A local aH=as[aG
+]local aI=as[aG+1]local aJ=as[aG+2]+aI as[aG+2]=aJ if aI>0 then if aJ<=aH then
+ax=ax+aE.D end else if aH<=aJ then ax=ax+aE.D end end elseif aF==58 then if ai
+then ai(as,ar,ao,an,ap)end local aG=aE.A local aH=aE.K aw=aG+6 local aI=as[aG]if
+(ad.generalizedIteration==false)or I(aI)then local aJ={aI(as[aG+1],as[aG+2])}h(
+aJ,1,aH,aG+3,as)if as[aG+3]~=nil then as[aG+2]=as[aG+3]ax=ax+aE.D else ax=ax+1
+end else local aJ,aK=q(az[aE],aI,as[aG+1],as[aG+2])if not aJ then c(aK)end if aK
+==L then az[aE]=nil ax=ax+1 else h(aK,1,aH,aG+3,as)as[aG+2]=as[aG+3]ax=ax+aE.D
+end end elseif aF==59 then if not I(as[aE.A])then c(g(
+'attempt to iterate over a %s value',a(as[aE.A])))end ax=ax+aE.D elseif aF==60
+then ax=ax+1 elseif aF==61 then if not I(as[aE.A])then c(g(
+'attempt to iterate over a %s value',a(as[aE.A])))end ax=ax+aE.D elseif aF==63
+then local aG=aE.A local aH=aE.B-1 if aH==K then aH=av.len aw=aG+aH-1 end h(av.
+list,1,aH,aG,as)elseif aF==64 then local aG=ae[aE.K+1]local aH=aG.nups local aI=
+k(aH)as[aE.A]=am(an,aG,aI)for aJ=1,aH do local aK=au[ax]ax=ax+1 local aL=aK.A if
+aL==0 then local aM={value=as[aK.B],index='value'}aM.store=aM aI[aJ]=aM elseif
+aL==2 then aI[aJ]=ap[aK.B+1]end end elseif aF==65 then elseif aF==66 then local
+aG=aE.K as[aE.A]=aG ax=ax+1 elseif aF==67 then if ai then ai(as,ar,ao,an,ap)end
+ax=ax+aE.E elseif aF==68 then elseif aF==69 then aE.E=aE.E+1 elseif aF==70 then
+c('encountered unhandled CAPTURE')elseif aF==71 then as[aE.A]=aE.K-as[aE.C]
+elseif aF==72 then as[aE.A]=aE.K/as[aE.C]elseif aF==73 then elseif aF==74 then
+ax=ax+1 elseif aF==75 then ax=ax+1 elseif aF==76 then local aG=as[aE.A]if ad.
+generalizedIteration and not I(aG)then local aH=au[ax+aE.D]if az[aH]==nil then
+local function aI(...)for aJ,aK,aL,aM,T,U,V,W,X,Y,Z,_,aN,aO,aP,aQ,aR,aS,aT,aU,aV
+,aW,aX,aY,aZ,a_,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,ba,bb,bc,bd,be,bf,bg,bh,bi,bj,bk,
+bl,bm,bn,bo,bp,bq,br,bs,bt,bu,bv,bw,bx,by,bz,bA,bB,bC,bD,bE,bF,bG,bH,bI,bJ,bK,bL
+,bM,bN,bO,bP,bQ,bR,bS,bT,bU,bV,bW,bX,bY,bZ,b_,b0,b1,b2,b3,b4,b5,b6,b7,b8,b9,ca,
+cb,cc,cd,ce,cf,cg,ch,ci,cj,ck,cl,cm,cn,co,cp,cq,cr,cs,ct,cu,cv,cw,cx,cy,cz,cA,cB
+,cC,cD,cE,cF,cG,cH,cI,cJ,cK,cL,cM,cN,cO,cP,cQ,cR,cS,cT,cU,cV,cW,cX,cY,cZ,c_,c0,
+c1,c2,c3,c4,c5,c6,c7,c8,c9,da,db,dc,dd,de,df,dg,dh,di,dj,dk,dl,dm,dn,dp,dq,dr,ds
+,dt,du,dv,dw,dx,dy,dz,dA,dB,dC,dD,dE,dF,dG,dH,dI,dJ,dK,dL,dM in...do p({aJ,aK,aL
+,aM,T,U,V,W,X,Y,Z,_,aN,aO,aP,aQ,aR,aS,aT,aU,aV,aW,aX,aY,aZ,a_,a0,a1,a2,a3,a4,a5,
+a6,a7,a8,a9,ba,bb,bc,bd,be,bf,bg,bh,bi,bj,bk,bl,bm,bn,bo,bp,bq,br,bs,bt,bu,bv,bw
+,bx,by,bz,bA,bB,bC,bD,bE,bF,bG,bH,bI,bJ,bK,bL,bM,bN,bO,bP,bQ,bR,bS,bT,bU,bV,bW,
+bX,bY,bZ,b_,b0,b1,b2,b3,b4,b5,b6,b7,b8,b9,ca,cb,cc,cd,ce,cf,cg,ch,ci,cj,ck,cl,cm
+,cn,co,cp,cq,cr,cs,ct,cu,cv,cw,cx,cy,cz,cA,cB,cC,cD,cE,cF,cG,cH,cI,cJ,cK,cL,cM,
+cN,cO,cP,cQ,cR,cS,cT,cU,cV,cW,cX,cY,cZ,c_,c0,c1,c2,c3,c4,c5,c6,c7,c8,c9,da,db,dc
+,dd,de,df,dg,dh,di,dj,dk,dl,dm,dn,dp,dq,dr,ds,dt,du,dv,dw,dx,dy,dz,dA,dB,dC,dD,
+dE,dF,dG,dH,dI,dJ,dK,dL,dM})end p(L)end az[aH]=o(aI)end end ax=ax+aE.D elseif aF
+==77 then local aG=aE.KN if(as[aE.A]==nil)~=aG then ax=ax+aE.D else ax=ax+1 end
+elseif aF==78 then local aG=aE.K local aH=aE.KN local aI=as[aE.A]if(H(aI)and(aI
+==aG))~=aH then ax=ax+aE.D else ax=ax+1 end elseif aF==79 then local aG=aE.K
+local aH=aE.KN local aI=as[aE.A]if(aI==aG)~=aH then ax=ax+aE.D else ax=ax+1 end
+elseif aF==80 then local aG=aE.K local aH=aE.KN local aI=as[aE.A]if(aI==aG)~=aH
+then ax=ax+aE.D else ax=ax+1 end elseif aF==81 then as[aE.A]=math.floor(as[aE.B]
+/as[aE.C])elseif aF==82 then as[aE.A]=math.floor(as[aE.B]/aE.K)else c(
+'Unsupported Opcode: '..aE.opname..' op: '..aF)end end for aG,aH in ay do aH.
+value=aH.store[aH.index]aH.store=aH aH.index='value'ay[aG]=nil end for aG,aH in
+az do r(aH)az[aG]=nil end end local function ar(...)local as=i(...)local at=k(ao
+.maxstacksize)local au={len=0,list={}}h(as,1,ao.numparams,0,at)if ao.numparams<
+as.n then local av=ao.numparams+1 local aw=as.n-ao.numparams au.len=aw h(as,av,
+av+aw-1,1,au.list)end as=nil local av={pc=0,name='NONE'}local aw if ad.
+errorHandling then aw=i(b(aq,av,at,ao.protos,ao.code,au))else aw=i(true,aq(av,at
+,ao.protos,ao.code,au))end if aw[1]then return j(aw,2,aw.n)else local ax=aw[2]if
+aj then aj(ax,at,av,ao,an,ap)end if G(ax)==false then if ad.allowProxyErrors
+then c(ax)else ax=a(ax)end end if ao.lineinfoenabled then return c(g(
+'Fiu VM Error { Name: %s Line: %s PC: %s Opcode: %s }: %s',ao.debugname,ao.
+instructionlineinfo[av.pc],av.pc,av.name,ax),0)else return c(g(
+'Fiu VM Error { Name: %s PC: %s Opcode: %s }: %s',ao.debugname,av.pc,av.name,ax)
+,0)end end end if ad.errorHandling then return ar else return aq end end return
+am(ab,af),al end local function ab(ac)local ad=
+[[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/]]local ae={}
+local af={}for ag=1,#ad do af[ad:sub(ag,ag)]=ag-1 end af['=']=0 local ag=1 local
+ah=#ac while ag<=ah do local ai=af[ac:sub(ag,ag)]local aj=af[ac:sub(ag+1,ag+1)]
+local ak=af[ac:sub(ag+2,ag+2)]local al=af[ac:sub(ag+3,ag+3)]if ai==nil or aj==
+nil then break end local am=bit32.bor(bit32.lshift(ai,2),bit32.rshift(aj,4))ae[#
+ae+1]=string.char(am)if ac:sub(ag+2,ag+2)~='='then local an=bit32.bor(bit32.
+lshift(bit32.band(aj,0xf),4),bit32.rshift(ak,2))ae[#ae+1]=string.char(an)end if
+ac:sub(ag+3,ag+3)~='='then local an=bit32.bor(bit32.lshift(bit32.band(ak,0x3),6)
+,al)ae[#ae+1]=string.char(an)end ag=ag+4 end return table.concat(ae)end local ac
+=12 local ad=(2^ac)-1 local ae=256 local af=257 local function ag()local ah={}
+local ai=0 local aj=0 local ak=1 local al={}function al.write(am,an)for ao=0,an-
+1 do local ap=bit32.extract(am,ao)if ap==1 then ai=bit32.bor(ai,bit32.lshift(1,
+aj))end aj=aj+1 if aj==8 then ah[ak]=string.char(ai)ak=ak+1 ai=0 aj=0 end end
+end function al.finish()if aj>0 then ah[ak]=string.char(ai)end return table.
+concat(ah)end return al end local function ah(ai)local aj={}local ak=1 local al=
+0 local am=#ai function aj.read(an)local ao=0 for ap=0,an-1 do if ak>am then
+return nil end local aq=ai:byte(ak)local ar=bit32.extract(aq,al)if ar==1 then ao
+=bit32.bor(ao,bit32.lshift(1,ap))end al=al+1 if al==8 then ak=ak+1 al=0 end end
+return ao end return aj end local function ai(aj)local ak={}local al=258 for am=
+0,255 do ak[am]=string.char(am)end local am=ah(aj)local an={}local ao=am.read(ac
+)if ao==nil or ao~=ae then c(
+[[LZWDECODE Error: Malformed stream start or missing clear code.]])end local ap=
+am.read(ac)if ap==nil or ap==af then return''end an[#an+1]=ak[ap]local aq=ak[ap]
+while true do local ar=am.read(ac)if ar==nil or ar==af then break end if ar==ae
+then ak={}al=258 for as=0,255 do ak[as]=string.char(as)end ap=am.read(ac)if ap==
+nil or ap==af then break end aq=ak[ap]an[#an+1]=aq continue end local as if ak[
+ar]then as=ak[ar]elseif ar==al then as=aq..aq:sub(1,1)else c(
+'LZWDECODE Error: Invalid code '..tostring(ar)..'. Input likely corrupted')end
+an[#an+1]=as if al<=ad then ak[al]=aq..as:sub(1,1)al=al+1 end ap=ar aq=as end
+return table.concat(an)end function Decode(aj)if a(aj)~='string'then c(
+'Input must be a string.')end if#aj==0 then return''end local ak=ab(aj)return
+ai(ak)end;]=]
 local function toBase64(data)
     local b = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
     local output = {}
@@ -107817,6 +106331,6 @@ local function luau_resetflags()
     return
 end
 local function obfuscate(code)
-	return VMSource .. "\n" .. DecompresserSource .. "\n" .. "return luau_load(Decode(" .. "\"" .. LZW_Base64_Encode(luau_compile(code)) .. "\"), (getfenv and getfenv() or _ENV))()"
+	return VMSource .. " " .. "return S(Decode(" .. "\"" .. LZW_Base64_Encode(luau_compile(code)) .. "\"), (getfenv and getfenv() or _ENV))()"
 end
 (writefile or writefilecontents)("obfuscated" .. tostring(tick()) .. ".lua", obfuscate((readfile or read_file or getfile or get_file or getfilecontents or get_file_contents)("CodeToObfuscate.txt")))
