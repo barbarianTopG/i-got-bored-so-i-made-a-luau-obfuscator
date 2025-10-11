@@ -1,5 +1,7 @@
+local input = {...}[1]
+local output = {...}[2]
 local luau = require("@lune/luau")
-local luau = require("@lune/fs")
+local fs = require("@lune/fs")
 local VMSource = [=[local type=type local pcall=pcall local error=error local tonumber=tonumber
 local assert=assert local setmetatable=setmetatable local string_format=string.
 format local table_move=table.move local table_pack=table.pack local
@@ -645,4 +647,4 @@ end
 local function obfuscate(code)
 	return VMSource .. " " .. "return luau_load(Decode(" .. "\"" .. LZW_Base64_Encode(luau.compile(code)) .. "\"), (getfenv and getfenv() or _ENV))()"
 end
-fs.writeFile("obfuscated" .. tostring(tick()) .. ".lua", obfuscate(fs.readFile("CodeToObfuscate.txt")))
+fs.writeFile((output or ("obfuscated" .. tostring(tick()) .. ".lua")), obfuscate(fs.readFile(input or "CodeToObfuscate.txt")))
