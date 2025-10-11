@@ -20,3 +20,4 @@ and install lune from @lune-org/lune (requires rokit and a inited rokit project 
 then do lune run ./src/lune.lua
 TODO: 
 make it accept IF and OF as params for the lune version
+EDIT ^ done
